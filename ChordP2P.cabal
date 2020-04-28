@@ -4,11 +4,11 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: eccb6a2930ff9aabe0e87e5cef1af12df596cf9f6a262981aa5aa9d21f491bc0
+-- hash: 6ab1a2a7d45b149d8d1094589226b9fa0f02068cf099b22e8731ed8a40172e4c
 
 name:           ChordP2P
 version:        0.1.0.0
-description:    Please see the README on GitHub at <https://github.com/abodhare/ChordP2P#readme>
+description:    Please see the README on GitHub at <https://github.com/githubuser/ChordP2P#readme>
 homepage:       https://github.com/abodhare/ChordP2P#readme
 bug-reports:    https://github.com/abodhare/ChordP2P/issues
 author:         abodhare
@@ -34,6 +34,9 @@ library
       src
   build-depends:
       base >=4.7 && <5
+    , hashable
+    , hashtables
+    , text
   default-language: Haskell2010
 
 executable ChordP2P-exe
@@ -46,6 +49,9 @@ executable ChordP2P-exe
   build-depends:
       ChordP2P
     , base >=4.7 && <5
+    , hashable
+    , hashtables
+    , text
   default-language: Haskell2010
 
 test-suite ChordP2P-test
@@ -59,4 +65,7 @@ test-suite ChordP2P-test
   build-depends:
       ChordP2P
     , base >=4.7 && <5
+    , hashable
+    , hashtables
+    , text
   default-language: Haskell2010
