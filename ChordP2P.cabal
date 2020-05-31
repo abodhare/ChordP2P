@@ -1,10 +1,10 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.31.2.
+-- This file has been generated from package.yaml by hpack version 0.33.0.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 4d243bc76fd1b8c34a42ec1584383fd17a495a64cfb000f290d955b137e15ed5
+-- hash: bb8fd96e2601de28642be0deb73da6c9eacbcc941e0f3b96940727e017b43176
 
 name:           ChordP2P
 version:        0.1.0.0
@@ -27,6 +27,7 @@ source-repository head
 
 library
   exposed-modules:
+      Chord
       Lib
   other-modules:
       Paths_ChordP2P
@@ -35,10 +36,12 @@ library
   build-depends:
       base >=4.7 && <5
     , bytestring
+    , cryptohash
     , hashable
     , hashtables
     , network
     , network-simple
+    , vector
   default-language: Haskell2010
 
 executable ChordP2P-exe
@@ -52,10 +55,12 @@ executable ChordP2P-exe
       ChordP2P
     , base >=4.7 && <5
     , bytestring
+    , cryptohash
     , hashable
     , hashtables
     , network
     , network-simple
+    , vector
   default-language: Haskell2010
 
 test-suite ChordP2P-test
@@ -70,8 +75,10 @@ test-suite ChordP2P-test
       ChordP2P
     , base >=4.7 && <5
     , bytestring
+    , cryptohash
     , hashable
     , hashtables
     , network
     , network-simple
+    , vector
   default-language: Haskell2010

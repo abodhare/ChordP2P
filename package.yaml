@@ -26,6 +26,8 @@ dependencies:
 - hashable
 - network
 - network-simple
+- vector
+- cryptohash
 
 library:
   source-dirs: src
