@@ -112,7 +112,7 @@ notify n@(ChordNode t s p ft next) x = case p of
 notifySuccessor :: Node -> (C.HostName, C.ServiceName) -> IO Node
 notifySuccessor n (xh, xs) = C.connect xh xs $ \(connSoc, remoteAddr) -> do
                                putStrLn $ "Connection established to " ++ show remoteAddr
-                               C.send connSoc $ B.concat ["notifySuccessor ", (read . show . hashIP . self) n]
+                               C.send connSoc $ B.concat ["notify ", (read . show . unwords . (\(a, b) -> [a, b]) . self) n]
                                return n
 
 fixFingers :: Node -> IO Node
@@ -137,4 +137,7 @@ checkNode (xh, xs) = C.connect xh xs $ \(connSoc, remoteAddr) -> do
                         case val of
                           Nothing -> return False
                           Just x -> if x == "pong" then return True else return False
+
+updateNode :: Node -> IO Node
+updateNode n = stabilize n >>= checkPredecessor >>= fixFingers
 
