@@ -37,7 +37,7 @@ findSuccessor n id = let succ = hashIP (successor n)
                              | id > this && id <= succ = return (successor n)
                              | otherwise = let (ah, as) = closestPrecedingNode n id in C.connect ah as $ \(connSoc, remoteAddr) -> do
                                              putStrLn $ "Connection established to " ++ show remoteAddr
-                                             C.send connSoc $ B.concat ["findSuccessor ", (read .show) id]
+                                             C.send connSoc $ B.concat ["findSuccessor ", (B.pack .show) id]
                                              val <- C.recv connSoc 10000
                                              case val of
                                                Nothing -> return ("", "")
@@ -56,7 +56,9 @@ closestPrecedingNode n id = let this = hashIP (self n) in
                                 findS n id this where
                                   findS :: Node -> Int -> Int -> (C.HostName, C.ServiceName)
                                   findS n id this = case V.find (check id this) (V.reverse (finger n)) of
-                                                       Just s  -> s
+                                                       Just s  -> case s of
+                                                                    ("", "") -> self n
+                                                                    _ -> s
                                                        Nothing -> self n
                                   check :: Int -> Int -> (C.HostName, C.ServiceName) -> Bool
                                   check id this m = let mh = hashIP m in mh > this && mh < id
@@ -71,7 +73,7 @@ join n x = let succ = findS x (self n) in
                  findS :: (C.HostName, C.ServiceName) -> (C.HostName, C.ServiceName) -> IO (C.HostName, C.ServiceName)
                  findS (xh, xs) this = C.connect xh xs $ \(connSoc, remoteAddr) -> do
                    putStrLn $ "Connection established to " ++ show remoteAddr
-                   C.send connSoc $ B.concat ["findSuccessor ", (read . show . hashIP) this]
+                   C.send connSoc $ B.concat ["findSuccessor ", (B.pack . show . hashIP) this]
                    val <- C.recv connSoc 10000
                    case val of
                      Nothing -> return ("", "")
@@ -112,7 +114,7 @@ notify n@(ChordNode t s p ft next) x = case p of
 notifySuccessor :: Node -> (C.HostName, C.ServiceName) -> IO Node
 notifySuccessor n (xh, xs) = C.connect xh xs $ \(connSoc, remoteAddr) -> do
                                putStrLn $ "Connection established to " ++ show remoteAddr
-                               C.send connSoc $ B.concat ["notify ", (read . show . unwords . (\(a, b) -> [a, b]) . self) n]
+                               C.send connSoc $ B.concat ["notify ", (B.pack . show . unwords . (\(a, b) -> [a, b]) . self) n]
                                return n
 
 fixFingers :: Node -> IO Node

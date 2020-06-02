@@ -32,20 +32,25 @@ app_ args = do
   let b = parseAddr args "--b"
   hashtable a b
 
-parseAddr :: [String] -> String -> (C.HostName, C.ServiceName)
+parseAddr :: [String] -> String -> Maybe (C.HostName, C.ServiceName)
 parseAddr (x:ipA:pA:xs) s
-  | x == s = (ipA, pA)
+  | x == s = Just (ipA, pA)
   | otherwise = parseAddr (ipA : pA : xs) s
 parseAddr (_:xs) s = parseAddr xs s
-parseAddr [] _ = ("", "")
+parseAddr [] _ = Nothing
 
-hashtable :: (C.HostName, C.ServiceName) -> (C.HostName, C.ServiceName) -> IO ()
+hashtable :: Maybe (C.HostName, C.ServiceName) -> Maybe (C.HostName, C.ServiceName) -> IO ()
 hashtable a b = do
   ht <- HT.new :: IO (HashTable B.ByteString B.ByteString)
-  x <- join (createNode a) b
+  let node = case a of
+               Just val -> createNode val
+               Nothing  -> createNode ("", "")
+  x <- case b of
+         Nothing  -> return node
+         Just val -> join node val
   n <- newIORef x
   forkIO (forever $ refresh n)
-  listenHT ht n a
+  listenHT ht n (self node)
 
 refresh :: IORef Node -> IO ()
 refresh n = do
@@ -63,8 +68,8 @@ insertString :: B.ByteString -> B.ByteString -> B.ByteString
 insertString k v = B.concat ["data stored: ", k, ", ", v, "\n"]
 
 addressString :: (C.HostName, C.ServiceName) -> B.ByteString
-addressString (a, b) = let ab = (read . show) a
-                           bb = (read . show) b in
+addressString (a, b) = let ab = (B.pack . show) a
+                           bb = (B.pack . show) b in
                            B.unwords [ab, bb]
 
 predecessorString :: Node -> B.ByteString
@@ -120,7 +125,7 @@ runLoop ht n connSoc = do
               C.send connSoc "notified" >>
               runLoop ht n connSoc
         ["ping"] -> C.send connSoc "pong" >> runLoop ht n connSoc
-        ["print"] -> C.send connSoc ((read .show) node) >> runLoop ht n connSoc
+        ["print"] -> C.send connSoc ((B.pack .show) node) >> runLoop ht n connSoc
         ("q":_) -> C.send connSoc "shutting the server down, bye bye"
         _ -> C.send connSoc helpString >> runLoop ht n connSoc
 
