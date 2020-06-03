@@ -41,7 +41,7 @@ parseAddr [] _ = Nothing
 
 hashtable :: Maybe (C.HostName, C.ServiceName) -> Maybe (C.HostName, C.ServiceName) -> IO ()
 hashtable a b = do
-  ht <- HT.new :: IO (HashTable B.ByteString B.ByteString)
+  ht <- HT.new :: IO (HashTable Int B.ByteString)
   let node = case a of
                Just val -> createNode val
                Nothing  -> createNode ("", "")
@@ -57,7 +57,7 @@ refresh n = do
   node <- readIORef n
   newNode <- updateNode node
   writeIORef n newNode
-  _ <- threadDelay 10000
+  _ <- threadDelay 1000000
   return ()
 
 lookupString :: Maybe B.ByteString -> B.ByteString
@@ -68,18 +68,18 @@ insertString :: B.ByteString -> B.ByteString -> B.ByteString
 insertString k v = B.concat ["data stored: ", k, ", ", v, "\n"]
 
 addressString :: (C.HostName, C.ServiceName) -> B.ByteString
-addressString (a, b) = let ab = (B.pack . show) a
-                           bb = (B.pack . show) b in
+addressString (a, b) = let ab = B.pack a
+                           bb = B.pack b in
                            B.unwords [ab, bb]
 
 predecessorString :: Node -> B.ByteString
 predecessorString n = let pred = predecessor n in
                           case pred of
-                            Nothing     -> ""
+                            Nothing     -> "\n"
                             Just (x, y) -> addressString (x, y)
 
 listenHT ::
-     HashTable B.ByteString B.ByteString
+     HashTable Int B.ByteString
   -> IORef Node
   -> (C.HostName, C.ServiceName)
   -> IO ()
@@ -90,7 +90,7 @@ listenHT ht n (ah, as) =
     runLoop ht n connSoc
 
 runLoop ::
-     HashTable B.ByteString B.ByteString
+     HashTable Int B.ByteString
   -> IORef Node
   -> C.Socket
   -> IO ()
@@ -102,19 +102,19 @@ runLoop ht n connSoc = do
     Just val ->
       case B.words val of
         ["get", x] ->
-          getValue node x >>= C.send connSoc >>
+          getValue ht node x >>= C.send connSoc >>
           runLoop ht n connSoc
         ["getID", x] ->
-          (lookupString <$> HT.lookup ht x) >>= C.send connSoc >>
+          (lookupString <$> HT.lookup ht (H.hashWithSalt salt x)) >>= C.send connSoc >>
           runLoop ht n connSoc
         ["put", x, y] ->
           putValue n x y >>
           runLoop ht n connSoc
         ["putID", x, y] ->
-          HT.insert ht x y >> C.send connSoc (insertString x y) >>
+          HT.insert ht (H.hashWithSalt salt x) y >> C.send connSoc (insertString x y) >>
           runLoop ht n connSoc
         ["findSuccessor", x] ->
-          findSuccessor node ((read . show) x) >>= C.send connSoc . addressString >>
+          findSuccessor node ((read . B.unpack) x) >>= C.send connSoc . addressString >>
           runLoop ht n connSoc
         ["predecessor"] ->
           C.send connSoc (predecessorString node) >>
@@ -130,19 +130,20 @@ runLoop ht n connSoc = do
         _ -> C.send connSoc helpString >> runLoop ht n connSoc
 
 getValue ::
-  Node
+  HashTable Int B.ByteString
+  -> Node
   -> B.ByteString
   -> IO B.ByteString
-getValue n x = do
-  succ <- findSuccessor n (H.hash x)
-  lookupOther succ x
+getValue ht n x = do
+  succ <- findSuccessor n (H.hashWithSalt salt x)
+  if succ == self n then lookupString <$> HT.lookup ht (H.hashWithSalt salt x) else lookupOther succ x
 
 lookupOther :: (C.HostName, C.ServiceName) -> B.ByteString -> IO B.ByteString
 lookupOther (bh, bs) x =
   C.connect bh bs $ \(connSoc, remoteAddr) -> do
-    B.putStr "Connection established to " >> print remoteAddr
+    B.putStr "lookupOther: Connection established to " >> print remoteAddr
     C.send connSoc (B.unwords ["getID", x])
-    s <- C.recv connSoc 128
+    s <- C.recv connSoc 10000
     case s of
       Nothing  -> return "not available"
       Just val -> return val
@@ -154,13 +155,13 @@ putValue ::
   -> IO ()
 putValue n k v = do
   node <- readIORef n
-  succ <- findSuccessor node (H.hash k)
+  succ <- findSuccessor node (H.hashWithSalt salt k)
   putOther succ k v
 
 putOther :: (C.HostName, C.ServiceName) -> B.ByteString -> B.ByteString -> IO ()
 putOther (bh, bs) k v =
   C.connect bh bs $ \(connSoc, remoteAddr) -> do
-    B.putStr "Connection established to " >> print remoteAddr
+    B.putStr "putOther: Connection established to " >> print remoteAddr
     C.send connSoc (B.unwords ["putID", k, v])
 
 helpString :: B.ByteString
