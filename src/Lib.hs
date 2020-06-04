@@ -24,6 +24,7 @@ app = do
     [] ->
       putStrLn
         "Please give two ip adresses and port numbers\n format: --a ipA pA --b ipB pB"
+    ["--test", x] -> testHT (read x)
     _ -> app_ args
 
 app_ :: [String] -> IO ()
@@ -31,6 +32,16 @@ app_ args = do
   let a = parseAddr args "--a"
   let b = parseAddr args "--b"
   hashtable a b
+
+localIPwithPort :: Int -> Maybe (C.HostName, C.ServiceName)
+localIPwithPort x = Just ("127.0.0.1", show x)
+
+testHT :: Int -> IO ()
+testHT n = do
+  let central = localIPwithPort 8080
+  forkIO $ hashtable central Nothing
+  mapM_ (\x -> forkIO $ hashtable (localIPwithPort x) central) (enumFromTo 8081 (8080 + n))
+  hashtable (localIPwithPort (8081 + n)) central
 
 parseAddr :: [String] -> String -> Maybe (C.HostName, C.ServiceName)
 parseAddr (x:ipA:pA:xs) s
@@ -47,7 +58,7 @@ hashtable a b = do
                Nothing  -> createNode ("", "")
   x <- case b of
          Nothing  -> return node
-         Just val -> join node val
+         Just val -> threadDelay 1000000 >> join node val
   n <- newTVarIO x
   forkIO (forever $ refresh n)
   listenHT ht n (self node)
@@ -122,7 +133,8 @@ runLoop ht n connSoc = do
           C.send connSoc (predecessorString node) >>
           runLoop ht n connSoc
         ["notify", x, y] ->
-          let new = notify node (B.unpack x, B.unpack y) in
+          let pair = (B.unpack x, B.unpack y)
+              new = addToFinger (notify node pair) pair in
               atomically (writeTVar n new) >>
               C.send connSoc "notified" >>
               runLoop ht n connSoc

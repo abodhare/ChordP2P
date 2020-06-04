@@ -20,7 +20,7 @@ data Node = ChordNode {
 } deriving (Show)
 
 ringBase :: Int
-ringBase = 8
+ringBase = 32
 
 salt :: Int
 salt = 1234
@@ -31,13 +31,18 @@ hashID x = H.hashWithSalt salt x `mod` (2 ^ ringBase)
 hashIP :: (C.HostName, C.ServiceName) -> Int
 hashIP x =  H.hashWithSalt salt (uncurry (++) x) `mod` (2 ^ ringBase)
 
+between :: Int -> Int -> Int -> Bool
+between a x y = let low = ((a - x) + (2 ^ ringBase)) `mod` (2 ^ ringBase)
+                    high = ((y - x) + (2 ^ ringBase)) `mod` (2 ^ ringBase) in
+                    low < high
+
 findSuccessor :: Node -> Int -> IO (C.HostName, C.ServiceName)
 findSuccessor n id = let succ = hashIP (successor n)
                          this = hashIP (self n) in
                          findS n id this succ where
                            findS :: Node -> Int -> Int -> Int -> IO (C.HostName, C.ServiceName)
                            findS n id this succ
-                             | id > this && id <= succ = return (successor n)
+                             | between id this succ || id == succ = return (successor n)
                              | otherwise = let (ah, as) = closestPrecedingNode n id in if (ah, as) == self n then return (successor n) else
                                                C.connect ah as $ \(connSoc, remoteAddr) -> do
                                                putStrLn $ "findSuccessor: Connection established to " ++ show remoteAddr
@@ -67,11 +72,11 @@ closestPrecedingNode n id = let this = hashIP (self n) in
                                                                     _ -> s
                                                        Nothing -> successor n
                                   check :: Int -> Int -> (C.HostName, C.ServiceName) -> Bool
-                                  check id this m = let mh = hashIP m in mh > this && mh < id
+                                  check id this m = let mh = hashIP m in between mh this id
 
 
 createNode :: (C.HostName, C.ServiceName) -> Node
-createNode x = ChordNode x x Nothing (V.replicate 8 ("", "")) 0
+createNode x = ChordNode x x Nothing (V.replicate ringBase ("", "")) 0
 
 join :: Node -> (C.HostName, C.ServiceName) -> IO Node
 join n x = let succ = findS x (self n) in
@@ -87,6 +92,21 @@ join n x = let succ = findS x (self n) in
                                                                    ("", "") -> x
                                                                    _ -> ret
 
+addToFinger :: Node -> (C.HostName, C.ServiceName) -> Node
+addToFinger n x = let index = fingerIndex (self n) x in case finger n V.!? index of
+                    Nothing -> n
+                    Just ("", "") -> let newFt = V.modify (\v -> MV.write v index x) (finger n) in
+                                         n { finger = newFt }
+                    Just _ -> n
+
+fingerIndex :: (C.HostName, C.ServiceName) -> (C.HostName, C.ServiceName) -> Int
+fingerIndex this pred = let t = hashIP this
+                            p = hashIP pred
+                            tupleList = reverse (zip (take ringBase (iterate (\x -> 2*(x - t) + t) (t + 1))) (enumFromTo 1 ringBase)) in
+                            case filter (between p t . fst) tupleList of
+                              x:_ -> snd x
+                              _   -> ringBase - 1
+
 
 stabilize :: Node -> IO Node
 stabilize n@(ChordNode this succ@(sh, ss) predec fingerTable next) = do
@@ -95,7 +115,7 @@ stabilize n@(ChordNode this succ@(sh, ss) predec fingerTable next) = do
               case x of
                 ("", "") -> return n
                 _ -> let xh = hashIP x
-                         change = xh > hashIP this && xh < hashIP succ in
+                         change = between xh (hashIP this) (hashIP succ) in
                          if change then
                                   let new = ChordNode this x predec fingerTable next in
                                       notifySuccessor new (successor new)
@@ -121,7 +141,7 @@ notify n@(ChordNode t s p ft next) x = case x of
                         Just pred -> let xh = hashIP x
                                          predh = hashIP pred
                                          th = hashIP t in
-                                         if xh > predh && xh < th then ChordNode t s (Just x) ft next
+                                         if between xh predh th then ChordNode t s (Just x) ft next
                                                                else n
 
 notifySuccessor :: Node -> (C.HostName, C.ServiceName) -> IO Node
