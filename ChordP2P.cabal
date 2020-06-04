@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: bb8fd96e2601de28642be0deb73da6c9eacbcc941e0f3b96940727e017b43176
+-- hash: 5e1fff6c5729a2ef05653a084fe993988dd98fe4ff4044862e254dabb35f17b4
 
 name:           ChordP2P
 version:        0.1.0.0
@@ -41,6 +41,7 @@ library
     , hashtables
     , network
     , network-simple
+    , stm
     , vector
   default-language: Haskell2010
 
@@ -60,6 +61,7 @@ executable ChordP2P-exe
     , hashtables
     , network
     , network-simple
+    , stm
     , vector
   default-language: Haskell2010
 
@@ -80,5 +82,6 @@ test-suite ChordP2P-test
     , hashtables
     , network
     , network-simple
+    , stm
     , vector
   default-language: Haskell2010

@@ -28,6 +28,7 @@ dependencies:
 - network-simple
 - vector
 - cryptohash
+- stm
 
 library:
   source-dirs: src

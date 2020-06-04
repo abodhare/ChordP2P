@@ -1,19 +1,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Lib
-  ( app
-  ) where
+module Lib where
 
 import           Chord
-import           Control.Concurrent    (forkIO, threadDelay)
-import           Control.Monad         (forever)
-import qualified Data.ByteString.Char8 as B
-import qualified Data.Hashable         as H
-import qualified Data.HashTable.IO     as HT
-import           Data.IORef
-import qualified Network.Simple.TCP    as C
-import qualified Network.Socket        as SO
-import qualified System.Environment    as S
+import           Control.Concurrent          (forkIO, threadDelay)
+import           Control.Concurrent.STM      (atomically)
+import           Control.Concurrent.STM.TVar (TVar, newTVarIO, readTVarIO,
+                                              writeTVar)
+import           Control.Monad               (forever)
+import qualified Data.ByteString.Char8       as B
+import qualified Data.Hashable               as H
+import qualified Data.HashTable.IO           as HT
+import qualified Network.Simple.TCP          as C
+import qualified Network.Socket              as SO
+import qualified System.Environment          as S
 
 type HashTable k v = HT.LinearHashTable k v
 
@@ -48,16 +48,18 @@ hashtable a b = do
   x <- case b of
          Nothing  -> return node
          Just val -> join node val
-  n <- newIORef x
+  n <- newTVarIO x
   forkIO (forever $ refresh n)
   listenHT ht n (self node)
 
-refresh :: IORef Node -> IO ()
+refresh :: TVar Node -> IO ()
 refresh n = do
-  node <- readIORef n
+  node <- readTVarIO n
+  putStrLn $ "refreshing node " ++ show node
   newNode <- updateNode node
-  writeIORef n newNode
-  _ <- threadDelay 1000000
+  putStrLn $ "new node " ++ show newNode
+  atomically (writeTVar n newNode)
+  _ <- threadDelay 10000000
   return ()
 
 lookupString :: Maybe B.ByteString -> B.ByteString
@@ -80,7 +82,7 @@ predecessorString n = let pred = predecessor n in
 
 listenHT ::
      HashTable Int B.ByteString
-  -> IORef Node
+  -> TVar Node
   -> (C.HostName, C.ServiceName)
   -> IO ()
 listenHT ht n (ah, as) =
@@ -91,12 +93,12 @@ listenHT ht n (ah, as) =
 
 runLoop ::
      HashTable Int B.ByteString
-  -> IORef Node
+  -> TVar Node
   -> C.Socket
   -> IO ()
 runLoop ht n connSoc = do
   s <- C.recv connSoc 128
-  node <- readIORef n
+  node <- readTVarIO n
   case s of
     Nothing -> C.send connSoc "not available"
     Just val ->
@@ -120,8 +122,8 @@ runLoop ht n connSoc = do
           C.send connSoc (predecessorString node) >>
           runLoop ht n connSoc
         ["notify", x, y] ->
-          let new = notify node (show x, show y) in
-              writeIORef n new >>
+          let new = notify node (B.unpack x, B.unpack y) in
+              atomically (writeTVar n new) >>
               C.send connSoc "notified" >>
               runLoop ht n connSoc
         ["ping"] -> C.send connSoc "pong" >> runLoop ht n connSoc
@@ -149,12 +151,12 @@ lookupOther (bh, bs) x =
       Just val -> return val
 
 putValue ::
-  IORef Node
+  TVar Node
   -> B.ByteString
   -> B.ByteString
   -> IO ()
 putValue n k v = do
-  node <- readIORef n
+  node <- readTVarIO n
   succ <- findSuccessor node (H.hashWithSalt salt k)
   putOther succ k v
 

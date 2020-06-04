@@ -26,10 +26,10 @@ salt :: Int
 salt = 1234
 
 hashID :: Int -> Int
-hashID x = H.hashWithSalt salt x `div` (2 ^ ringBase)
+hashID x = H.hashWithSalt salt x `mod` (2 ^ ringBase)
 
 hashIP :: (C.HostName, C.ServiceName) -> Int
-hashIP x =  H.hashWithSalt salt (uncurry (++) x) `div` (2 ^ ringBase)
+hashIP x =  H.hashWithSalt salt (uncurry (++) x) `mod` (2 ^ ringBase)
 
 findSuccessor :: Node -> Int -> IO (C.HostName, C.ServiceName)
 findSuccessor n id = let succ = hashIP (successor n)
@@ -38,8 +38,8 @@ findSuccessor n id = let succ = hashIP (successor n)
                            findS :: Node -> Int -> Int -> Int -> IO (C.HostName, C.ServiceName)
                            findS n id this succ
                              | id > this && id <= succ = return (successor n)
-                             | otherwise = let (ah, as) = closestPrecedingNode n id in
-                                               if (ah, as) == self n then return (self n) else C.connect ah as $ \(connSoc, remoteAddr) -> do
+                             | otherwise = let (ah, as) = closestPrecedingNode n id in if (ah, as) == self n then return (successor n) else
+                                               C.connect ah as $ \(connSoc, remoteAddr) -> do
                                                putStrLn $ "findSuccessor: Connection established to " ++ show remoteAddr
                                                C.send connSoc $ B.concat ["findSuccessor ", (B.pack . show) id]
                                                val <- C.recv connSoc 10000
@@ -63,9 +63,9 @@ closestPrecedingNode n id = let this = hashIP (self n) in
                                   findS :: Node -> Int -> Int -> (C.HostName, C.ServiceName)
                                   findS n id this = case V.find (check id this) (V.reverse (finger n)) of
                                                        Just s  -> case s of
-                                                                    ("", "") -> self n
+                                                                    ("", "") -> successor n
                                                                     _ -> s
-                                                       Nothing -> self n
+                                                       Nothing -> successor n
                                   check :: Int -> Int -> (C.HostName, C.ServiceName) -> Bool
                                   check id this m = let mh = hashIP m in mh > this && mh < id
 
@@ -75,23 +75,23 @@ createNode x = ChordNode x x Nothing (V.replicate 8 ("", "")) 0
 
 join :: Node -> (C.HostName, C.ServiceName) -> IO Node
 join n x = let succ = findS x (self n) in
-               succ >>= \s -> return (ChordNode (self n) s Nothing (finger n) (next n)) where
+               succ >>= \s -> notifySuccessor n s >> return (ChordNode (self n) s Nothing (finger n) (next n)) where
                  findS :: (C.HostName, C.ServiceName) -> (C.HostName, C.ServiceName) -> IO (C.HostName, C.ServiceName)
                  findS (xh, xs) this = C.connect xh xs $ \(connSoc, remoteAddr) -> do
                    putStrLn $ "join: Connection established to " ++ show remoteAddr
                    C.send connSoc $ B.concat ["findSuccessor ", (B.pack . show . hashIP) this]
                    val <- C.recv connSoc 10000
                    case val of
-                     Nothing -> return (self n)
+                     Nothing -> return x
                      Just s  -> return $ let ret = convToIP s in case ret of
-                                                                   ("", "") -> self n
+                                                                   ("", "") -> x
                                                                    _ -> ret
 
 
 stabilize :: Node -> IO Node
 stabilize n@(ChordNode this succ@(sh, ss) predec fingerTable next) = do
               x <- getPredecessor sh ss
-              putStrLn "stablizing"
+              putStrLn $ "stablizing with predecessor " ++ show x
               case x of
                 ("", "") -> return n
                 _ -> let xh = hashIP x
@@ -114,26 +114,29 @@ getPredecessor sh ss = C.connect sh ss $ \(connSoc, remoteAddr) -> do
 
 
 notify :: Node -> (C.HostName, C.ServiceName) -> Node
-notify n@(ChordNode t s p ft next) x = case p of
-               Nothing -> ChordNode t s (Just x) ft next
-               Just pred -> let xh = hashIP x
-                                predh = hashIP pred
-                                th = hashIP t in
-                                if xh > predh && xh < th then ChordNode t s (Just x) ft next
-                                                         else n
+notify n@(ChordNode t s p ft next) x = case x of
+        ("", "") -> n
+        _ ->        case p of
+                        Nothing -> ChordNode t s (Just x) ft next
+                        Just pred -> let xh = hashIP x
+                                         predh = hashIP pred
+                                         th = hashIP t in
+                                         if xh > predh && xh < th then ChordNode t s (Just x) ft next
+                                                               else n
 
 notifySuccessor :: Node -> (C.HostName, C.ServiceName) -> IO Node
 notifySuccessor n (xh, xs) = C.connect xh xs $ \(connSoc, remoteAddr) -> do
                                putStrLn $ "notifySuccessor: Connection established to " ++ show remoteAddr
-                               C.send connSoc $ B.concat ["notify ", (B.pack . show . unwords . (\(a, b) -> [a, b]) . self) n]
+                               C.send connSoc $ B.concat ["notify ", ((\(a, b) -> B.unwords [B.pack a, B.pack b]) . self) n]
                                return n
 
 fixFingers :: Node -> IO Node
-fixFingers n = let nextIndex = (next n `div` ringBase) + 1
-                   succIndex = (hashIP (self n) + 2 ^ (nextIndex - 1)) `div` ringBase in do
-                   putStrLn "fixing fingers"
+fixFingers n = let nextIndex = (next n `mod` ringBase) + 1
+                   succIndex = (hashIP (self n) + 2 ^ (nextIndex - 1)) `mod` ringBase in do
+                   putStrLn $ "fixing fingers, nextIndex: " ++ show nextIndex ++ ", succIndex: " ++ show succIndex
                    x <- findSuccessor n succIndex
-                   let newFt = V.modify (\v -> MV.write v nextIndex x) (finger n)
+                   let newVal = if x == self n then ("", "") else x
+                   let newFt = V.modify (\v -> MV.write v (nextIndex - 1) newVal) (finger n)
                    return (ChordNode (self n) (successor n) (predecessor n) newFt nextIndex)
 
 checkPredecessor :: Node -> IO Node
