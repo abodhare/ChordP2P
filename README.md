@@ -1,7 +1,7 @@
 # ChordP2P
 
 A project to make a rough implementation of the Chord paper
-[https://pdos.csail.mit.edu/papers/ton:chord/paper-ton.pdf](here).
+[here](https://pdos.csail.mit.edu/papers/ton:chord/paper-ton.pdf).
 
 ## TODO
 
